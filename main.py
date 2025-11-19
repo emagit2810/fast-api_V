@@ -37,6 +37,25 @@ BASE_URL = _getenv_clean("BASE_URL") or "https://api.groq.com/openai/v1"
 if not GROQ_API_KEY or not API_BEARER_TOKEN:
     raise RuntimeError("Faltan GROQ_API_KEY o API_BEARER_TOKEN en .env")
 
+# ======================
+# Configuración de n8n webhook (test vs prod)
+# ======================
+
+ENVIRONMENT = _getenv_clean("ENVIRONMENT") or "prod"
+N8N_WEBHOOK_TEST = _getenv_clean("N8N_WEBHOOK_TEST")
+N8N_WEBHOOK_PROD = _getenv_clean("N8N_WEBHOOK_PROD")
+
+# Seleccionar URL según el entorno
+if ENVIRONMENT == "test":
+    N8N_WEBHOOK_URL = N8N_WEBHOOK_TEST
+else:
+    N8N_WEBHOOK_URL = N8N_WEBHOOK_PROD
+
+# Validar que la URL de n8n esté configurada
+if not N8N_WEBHOOK_URL:
+    print(f"⚠️  ADVERTENCIA: N8N_WEBHOOK_URL no configurada para ENVIRONMENT={ENVIRONMENT}")
+    print(f"   Asegúrate de definir N8N_WEBHOOK_TEST o N8N_WEBHOOK_PROD en .env o Render")
+
 # Cliente Groq (usa el endpoint OpenAI-compatible por defecto)
 client = AsyncGroq(api_key=GROQ_API_KEY)
 
@@ -227,20 +246,27 @@ async def query_endpoint(
         print(f"✅ Texto extraído: {respuesta[:120]}...")
         
         # Llamada a n8n webhook DESPUÉS de Groq (solo si éxito)
-        try:
-            n8n_url = "https://n8n-service-ea3k.onrender.com/webhook-test/test-groq"
-            payload_n8n = {
-                "pregunta": payload.pregunta,
-                "respuesta_groq": respuesta,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            headers_n8n = {"Content-Type": "application/json"}
-            async with httpx.AsyncClient(timeout=5.0) as ac:
-                response_n8n = await ac.post(n8n_url, json=payload_n8n, headers=headers_n8n)
-                response_n8n.raise_for_status()
-        except Exception as e:
-            print(f"❌ Error llamando n8n: {e}")
-            # Log solo, continúa – n8n es "fire-and-forget" para no impactar UX
+        if N8N_WEBHOOK_URL:
+            try:
+                payload_n8n = {
+                    "pregunta": payload.pregunta,
+                    "respuesta_groq": respuesta,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "environment": ENVIRONMENT
+                }
+                headers_n8n = {"Content-Type": "application/json"}
+                
+                print(f"📤 Enviando a n8n ({ENVIRONMENT}): {N8N_WEBHOOK_URL}")
+                
+                async with httpx.AsyncClient(timeout=5.0) as ac:
+                    response_n8n = await ac.post(N8N_WEBHOOK_URL, json=payload_n8n, headers=headers_n8n)
+                    response_n8n.raise_for_status()
+                    print(f"✅ n8n respondió: {response_n8n.status_code}")
+            except Exception as e:
+                print(f"❌ Error llamando n8n: {e}")
+                # Log solo, continúa – n8n es "fire-and-forget" para no impactar UX
+        else:
+            print(f"⚠️  Saltando llamada a n8n (URL no configurada para ENVIRONMENT={ENVIRONMENT})")
         
         print("="*50)
         print("✅ PETICIÓN /query COMPLETADA")
@@ -266,6 +292,9 @@ async def root():
         "service": "API Test Groq",
         "version": "1.0.0",
         "model": MODEL_NAME,
+        "environment": ENVIRONMENT,
+        "n8n_webhook_configured": N8N_WEBHOOK_URL is not None,
+        "n8n_webhook_url": N8N_WEBHOOK_URL if N8N_WEBHOOK_URL else "Not configured"
     }
 
 if __name__ == "__main__":
