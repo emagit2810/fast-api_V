@@ -146,7 +146,7 @@ class QueryOut(BaseModel):
 async def healthz():
     return {
         "status": "ok",
-        "service": "Gastos Tracker API",
+        "service": "gestor de tareas API",
         "version": "1.0.0",
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
@@ -216,7 +216,47 @@ async def query_endpoint(
         )
 
     print(f"🔑 Token válido: {authorization.credentials[:10]}...")
-    print(f"📩 Pregunta: {payload.pregunta}")
+# -----------------------------------------------------------------
+# CURL equivalente a la petición que recibió FastAPI (para debugging)
+# -----------------------------------------------------------------
+    # -----------------------------------------------------------------
+    # CURL equivalente a la petición que recibió FastAPI (para debugging)
+    # -----------------------------------------------------------------
+    body = json.dumps({"pregunta": payload.pregunta}, ensure_ascii=False)
+    incoming_curl = (
+        f'curl -X POST "{request.url}" \
+        f'  -H "Content-Type: application/json" \
+        f'  -H "Authorization: Bearer {authorization.credentials}" \
+        f'  --data-raw {json.dumps(body)}'
+    )
+    print("🔧 CURL equivalente:\n" + incoming_curl)
+    # -----------------------------------------------------------------
+# -----------------------------------------------------------------
+# Preparar llamada a Groq (mostramos también el curl equivalente)
+# -----------------------------------------------------------------
+    groq_payload = {
+        "model": MODEL_NAME,
+        "messages": [
+            {"role": "system", "content": (
+                 "Eres un asistente experto en tareas relacionadas con gmail, jerarquizacion de tareas respecto a parametros: tiempo, impacto, dificultad, "
+                    "asistente de tareas que recomienda mejoras a la tareas o pasos primeros"
+                    "Responde en español claro y concreto."
+                    'haz chiste espontaneos y cortos cada 2 - 3 respuestas sin  avisar'
+            )},
+            {"role": "user", "content": payload.pregunta},
+        ],
+        "max_tokens": 300,
+        "temperature": 0.8,
+    }
+
+    groq_curl = (
+        f'curl -X POST "{BASE_URL}/chat/completions" '
+        f'-H "Authorization: Bearer {GROQ_API_KEY}" '
+        f'-H "Content-Type: application/json" '
+        f"-d '{json.dumps(groq_payload)}'"
+    )
+    print("🚀 CURL equivalente a la llamada a Groq:\n" + groq_curl)
+
 
     # 2) Llamada al modelo Groq (gpt-oss-20b)
     try:
@@ -228,9 +268,10 @@ async def query_endpoint(
                 {
                     "role": "system",
                     "content": (
-                        "Eres un asistente experto en análisis de gastos, "
-                        "tendencias financieras y contexto económico. "
+                        "Eres un asistente experto en tareas relacionadas con gmail, jerarquizacion de tareas respecto a parametros: tiempo, impacto, dificultad, "
+                        "asistente de tareas que recomienda mejoras a la tareas o pasos primeros "
                         "Responde en español claro y concreto."
+                        'haz chiste espontaneos y cortos cada 2 - 3 respuestas sin  avisar'
                     ),
                 },
                 {
