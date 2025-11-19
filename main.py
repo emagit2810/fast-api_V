@@ -219,15 +219,12 @@ async def query_endpoint(
 # -----------------------------------------------------------------
 # CURL equivalente a la petición que recibió FastAPI (para debugging)
 # -----------------------------------------------------------------
-    # -----------------------------------------------------------------
-    # CURL equivalente a la petición que recibió FastAPI (para debugging)
-    # -----------------------------------------------------------------
     body = json.dumps({"pregunta": payload.pregunta}, ensure_ascii=False)
     incoming_curl = (
-        f'curl -X POST "{request.url}" \
-        f'  -H "Content-Type: application/json" \
-        f'  -H "Authorization: Bearer {authorization.credentials}" \
-        f'  --data-raw {json.dumps(body)}'
+        f'curl -X POST "{request.url}" '
+        f' -H "Content-Type: application/json" '
+        f' -H "Authorization: Bearer {authorization.credentials}" '
+        f" --data-raw '{body}'"
     )
     print("🔧 CURL equivalente:\n" + incoming_curl)
     # -----------------------------------------------------------------
@@ -280,7 +277,7 @@ async def query_endpoint(
                 },
             ],
             max_tokens=300,
-            temperature=0.4,
+            temperature=0.8,
         )
 
         respuesta = completion.choices[0].message.content or "Sin respuesta"
