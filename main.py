@@ -7,10 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from pathlib import Path
-from groq import Groq
+from groq import AsyncGroq
 import time
 import uuid
-import requests  # Para POST a n8n webhook
+
+import httpx
 
 # ======================
 # Carga de configuración
@@ -37,7 +38,7 @@ if not GROQ_API_KEY or not API_BEARER_TOKEN:
     raise RuntimeError("Faltan GROQ_API_KEY o API_BEARER_TOKEN en .env")
 
 # Cliente Groq (usa el endpoint OpenAI-compatible por defecto)
-client = Groq(api_key=GROQ_API_KEY)
+client = AsyncGroq(api_key=GROQ_API_KEY)
 
 # Seguridad Bearer (auto_error=False para manejarlo a mano)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -103,7 +104,7 @@ ALLOWED_ORIGINS = _getenv_clean("ALLOWED_ORIGINS") or "*"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if ALLOWED_ORIGINS == "*" else ALLOWED_ORIGINS.split(","),
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     allow_credentials=True,
 )
@@ -202,7 +203,7 @@ async def query_endpoint(
     try:
         print(f"🚀 Llamando a Groq con modelo: {MODEL_NAME}")
 
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {
@@ -227,15 +228,16 @@ async def query_endpoint(
         
         # Llamada a n8n webhook DESPUÉS de Groq (solo si éxito)
         try:
-            n8n_url = "http://n8n-service-ea3k.onrender.com/webhook-test/test-groq"
+            n8n_url = "https://n8n-service-ea3k.onrender.com/webhook-test/test-groq"
             payload_n8n = {
                 "pregunta": payload.pregunta,
                 "respuesta_groq": respuesta,
                 "timestamp": datetime.utcnow().isoformat()
             }
             headers_n8n = {"Content-Type": "application/json"}
-            response_n8n = requests.post(n8n_url, json=payload_n8n, headers=headers_n8n)
-            response_n8n.raise_for_status()
+            async with httpx.AsyncClient(timeout=5.0) as ac:
+                response_n8n = await ac.post(n8n_url, json=payload_n8n, headers=headers_n8n)
+                response_n8n.raise_for_status()
         except Exception as e:
             print(f"❌ Error llamando n8n: {e}")
             # Log solo, continúa – n8n es "fire-and-forget" para no impactar UX
@@ -265,3 +267,7 @@ async def root():
         "version": "1.0.0",
         "model": MODEL_NAME,
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
