@@ -233,7 +233,9 @@ async def query_endpoint(
                 "respuesta_groq": respuesta,
                 "timestamp": datetime.utcnow().isoformat()
             }
-            headers_n8n = 
+            headers_n8n = {"Content-Type": "application/json"}
+            response_n8n = requests.post(n8n_url, json=payload_n8n, headers=headers_n8n)
+            response_n8n.raise_for_status()
         except Exception as e:
             print(f"❌ Error llamando n8n: {e}")
             # Log solo, continúa – n8n es "fire-and-forget" para no impactar UX
