@@ -1,0 +1,30 @@
+# Entornos virtuales
+venv/
+env/
+.venv/
+
+# Variables de entorno (protege GROQ_API_KEY, API_BEARER_TOKEN, etc.)
+.env
+.env.*
+*.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# Credenciales y claves
+*.key
+*.pem
+secrets.json
+
+# IDE
+.vscode/
+.idea/
+
+
+
+# n8n credenciales locales
+.n8n/
