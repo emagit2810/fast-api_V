@@ -187,6 +187,7 @@ async def test_endpoint(request: Request):
 @app.post("/query", response_model=QueryOut)
 async def query_endpoint(
     payload: QueryIn,
+    request: Request,
     authorization: HTTPAuthorizationCredentials = Depends(bearer_scheme)
 ):
     """
