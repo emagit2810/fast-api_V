@@ -295,12 +295,28 @@ async def query_endpoint(
                 }
                 headers_n8n = {"Content-Type": "application/json"}
                 
-                print(f"📤 Enviando a n8n ({ENVIRONMENT}): {N8N_WEBHOOK_URL}")
+                print(f"\n📡 ENVIANDO A N8N WEBHOOK ({ENVIRONMENT})...")
+                print(f"🔗 URL: {N8N_WEBHOOK_URL}")
+                print(f"📋 Headers: {headers_n8n}")
+                print(f"📦 Body: {json.dumps(payload_n8n, ensure_ascii=False)}")
                 
-                async with httpx.AsyncClient(timeout=5.0) as ac:
+                # Escapar comillas simples para el CURL de debug
+                body_safe = json.dumps(payload_n8n, ensure_ascii=False).replace("'", "'\\''")
+                
+                n8n_curl = (
+                    f'curl -X POST "{N8N_WEBHOOK_URL}" '
+                    f'-H "Content-Type: application/json" '
+                    f"-d '{body_safe}'"
+                )
+                print(f"🔧 CURL n8n (para copiar/pegar):\n{n8n_curl}")
+
+                async with httpx.AsyncClient(timeout=10.0) as ac:
                     response_n8n = await ac.post(N8N_WEBHOOK_URL, json=payload_n8n, headers=headers_n8n)
+                    print(f"🔙 Respuesta n8n: {response_n8n.status_code}")
+                    if response_n8n.status_code >= 400:
+                         print(f"❌ Body respuesta n8n: {response_n8n.text}")
                     response_n8n.raise_for_status()
-                    print(f"✅ n8n respondió: {response_n8n.status_code}")
+                    
             except Exception as e:
                 print(f"❌ Error llamando n8n: {e}")
                 # Log solo, continúa – n8n es "fire-and-forget" para no impactar UX
