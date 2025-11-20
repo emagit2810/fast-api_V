@@ -138,6 +138,16 @@ class QueryIn(BaseModel):
 class QueryOut(BaseModel):
     respuesta: str
 
+class ReminderIn(BaseModel):
+    text: str
+    priority: int | None = None
+    task_id: str | None = None
+    due_date: str | None = None
+    type: str | None = None
+
+class ReminderOut(BaseModel):
+    reminder_text: str
+
 # ======================
 # Endpoints
 # ======================
@@ -338,6 +348,93 @@ async def query_endpoint(
         raise HTTPException(
             status_code=502,
             detail=f"Error en Groq: {str(e)}"
+        )
+
+@app.post("/reminder", response_model=ReminderOut)
+async def reminder_endpoint(
+    payload: ReminderIn,
+    request: Request,
+    authorization: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+):
+    """
+    Endpoint para procesar recordatorios desde la TODO app.
+    """
+    print("\n" + "="*50)
+    print("🔔 NUEVA PETICIÓN /reminder")
+    print("="*50)
+
+    if authorization is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Se requiere autenticación",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if authorization.credentials != API_BEARER_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token de autorización inválido",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    print(f"🔑 Token válido: {authorization.credentials[:10]}...")
+
+    # Curl de debug
+    body = json.dumps(payload.model_dump(), ensure_ascii=False)
+    incoming_curl = (
+        f'curl -X POST "{request.url}" '
+        f' -H "Content-Type: application/json" '
+        f' -H "Authorization: Bearer {authorization.credentials}" '
+        f" --data-raw '{body}'"
+    )
+    print("🔧 CURL equivalente /reminder:\n" + incoming_curl)
+
+    try:
+        print(f"🚀 Llamando a Groq (reminder) con modelo: {MODEL_NAME}")
+
+        user_message = (
+            f"Texto del recordatorio: {payload.text}\n"
+            f"ID de tarea: {payload.task_id}\n"
+            f"Fecha límite: {payload.due_date}\n"
+            f"Prioridad: {payload.priority}\n"
+            f"Tipo: {payload.type}\n\n"
+            "Devuélveme una única frase clara y corta con el recordatorio optimizado."
+        )
+
+        completion = await client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres un asistente de productividad. "
+                        "Reescribes recordatorios para que sean claros, breves y accionables. "
+                        "Responde SIEMPRE en español."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": user_message,
+                },
+            ],
+            max_tokens=120,
+            temperature=0.4,
+        )
+
+        reminder_text = completion.choices[0].message.content or "Recordatorio procesado."
+        print(f"✅ Reminder generado: {reminder_text[:120]}...")
+
+        print("="*50)
+        print("✅ PETICIÓN /reminder COMPLETADA")
+        print("="*50 + "\n")
+
+        return ReminderOut(reminder_text=reminder_text)
+
+    except Exception as e:
+        print(f"❌ ERROR EN /reminder: {type(e).__name__} -> {e}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error en Groq (reminder): {str(e)}"
         )
 
 @app.get("/")
