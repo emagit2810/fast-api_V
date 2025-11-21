@@ -393,12 +393,14 @@ async def reminder_endpoint(
         print(f"🚀 Llamando a Groq (reminder) con modelo: {MODEL_NAME}")
 
         user_message = (
-            f"Texto del recordatorio: {payload.text}\n"
+            f"Texto: {payload.text}\n"
             f"ID de tarea: {payload.task_id}\n"
             f"Fecha límite: {payload.due_date}\n"
             f"Prioridad: {payload.priority}\n"
             f"Tipo: {payload.type}\n\n"
-            "Devuélveme una única frase clara y corta con el recordatorio optimizado."
+            "Instrucciones:\n"
+            "1. Si el texto es una pregunta, respóndela.\n"
+            "2. Si es un recordatorio, responde con una frase como: 'Recordatorio: [lo que se pidió] fue hecho'.\n"
         )
 
         completion = await client.chat.completions.create(
@@ -407,8 +409,9 @@ async def reminder_endpoint(
                 {
                     "role": "system",
                     "content": (
-                        "Eres un asistente de productividad. "
-                        "Reescribes recordatorios para que sean claros, breves y accionables. "
+                        "Eres un asistente inteligente. "
+                        "Si recibes una pregunta, responde la pregunta. "
+                        "Si recibes una orden de recordatorio, confirma que se realizó con una frase tipo: 'Recordatorio: [resumen] fue hecho'. "
                         "Responde SIEMPRE en español."
                     ),
                 },
@@ -417,7 +420,7 @@ async def reminder_endpoint(
                     "content": user_message,
                 },
             ],
-            max_tokens=120,
+            max_tokens=300,
             temperature=0.4,
         )
 
