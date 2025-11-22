@@ -446,7 +446,7 @@ async def reminder_endpoint(
         print(f"✅ Reminder generado: {reminder_text[:120]}...")
 
         # --- NUEVO: construir link de WhatsApp con wa.me ---
-        whatsapp_number = "573115226848"
+        whatsapp_number = "+573134627810"
 
         msg = (
             "🤖 Nuevo mensaje de Groq (Reminder)\n\n"
