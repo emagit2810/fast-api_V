@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 # ============ CAMBIA ESTO SOLO =============
 URL = "https://fast-api-v.onrender.com/healthz"   # <--- tu URL real
 INTERVALO_SEGUNDOS = 600   # 10 minutos = seguro (Render permite hasta 15 min)
-HORAS_A_MANTENER = 2       # 0 = infinito
+HORAS_A_MANTENER = 3       # 0 = infinito
 # ===========================================
 
 def ping():

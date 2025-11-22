@@ -12,6 +12,7 @@ import time
 import uuid
 
 import httpx
+from urllib.parse import quote
 
 # ======================
 # Carga de configuración
@@ -137,6 +138,7 @@ class QueryIn(BaseModel):
 
 class QueryOut(BaseModel):
     respuesta: str
+    whatsapp_link: str | None = None
 
 class ReminderIn(BaseModel):
     text: str
@@ -147,6 +149,7 @@ class ReminderIn(BaseModel):
 
 class ReminderOut(BaseModel):
     reminder_text: str
+    whatsapp_link: str | None = None
 
 # ======================
 # Endpoints
@@ -293,6 +296,21 @@ async def query_endpoint(
 
         respuesta = completion.choices[0].message.content or "Sin respuesta"
         print(f"✅ Texto extraído: {respuesta[:120]}...")
+
+        # --- NUEVO: construir link de WhatsApp con wa.me ---
+        whatsapp_number = "573115226848"
+
+        msg = (
+            "🤖 Nuevo mensaje de Groq\n\n"
+            f"❓ Pregunta:\n{payload.pregunta}\n\n"
+            f"💬 Respuesta:\n{respuesta}"
+        )
+
+        # Codificamos el texto para URL (espacios, saltos de línea, emojis, etc.)
+        encoded_msg = quote(msg, safe="")
+        whatsapp_link = f"https://wa.me/{whatsapp_number}?text={encoded_msg}"
+        print(f"🔗 WhatsApp link generado: {whatsapp_link}")
+        # --- FIN NUEVO ---
         
         # Llamada a n8n webhook DESPUÉS de Groq (solo si éxito)
         if N8N_WEBHOOK_URL:
@@ -337,7 +355,7 @@ async def query_endpoint(
         print("✅ PETICIÓN /query COMPLETADA")
         print("="*50 + "\n")
 
-        return QueryOut(respuesta=respuesta)
+        return QueryOut(respuesta=respuesta, whatsapp_link=whatsapp_link)
 
     except Exception as e:
         print(f"❌ ERROR EN GROQ: {type(e).__name__}")
@@ -427,11 +445,26 @@ async def reminder_endpoint(
         reminder_text = completion.choices[0].message.content or "Recordatorio procesado."
         print(f"✅ Reminder generado: {reminder_text[:120]}...")
 
+        # --- NUEVO: construir link de WhatsApp con wa.me ---
+        whatsapp_number = "573115226848"
+
+        msg = (
+            "🤖 Nuevo mensaje de Groq (Reminder)\n\n"
+            f"📝 Texto original:\n{payload.text}\n\n"
+            f"💬 Respuesta:\n{reminder_text}"
+        )
+
+        # Codificamos el texto para URL
+        encoded_msg = quote(msg, safe="")
+        whatsapp_link = f"https://wa.me/{whatsapp_number}?text={encoded_msg}"
+        print(f"🔗 WhatsApp link generado: {whatsapp_link}")
+        # --- FIN NUEVO ---
+
         print("="*50)
         print("✅ PETICIÓN /reminder COMPLETADA")
         print("="*50 + "\n")
 
-        return ReminderOut(reminder_text=reminder_text)
+        return ReminderOut(reminder_text=reminder_text, whatsapp_link=whatsapp_link)
 
     except Exception as e:
         print(f"❌ ERROR EN /reminder: {type(e).__name__} -> {e}")
