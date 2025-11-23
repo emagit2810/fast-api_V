@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Header, Request, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 from pathlib import Path
 from groq import AsyncGroq
@@ -146,10 +146,19 @@ class ReminderIn(BaseModel):
     task_id: str | None = None
     due_date: str | None = None
     type: str | None = None
+    response_mode: str = "whatsapp_link"  # "whatsapp_link" | "text_only"
+
+    @field_validator("response_mode")
+    @classmethod
+    def validate_response_mode(cls, v: str) -> str:
+        if v not in ["whatsapp_link", "text_only"]:
+            raise ValueError("response_mode debe ser 'whatsapp_link' o 'text_only'")
+        return v
 
 class ReminderOut(BaseModel):
     reminder_text: str
     whatsapp_link: str | None = None
+    response_type: str  # "whatsapp_link" | "text_only"
 
 # ======================
 # Endpoints
@@ -445,26 +454,33 @@ async def reminder_endpoint(
         reminder_text = completion.choices[0].message.content or "Recordatorio procesado."
         print(f"✅ Reminder generado: {reminder_text[:120]}...")
 
-        # --- NUEVO: construir link de WhatsApp con wa.me ---
-        whatsapp_number = "573115226848"
-
-        msg = (
-            "🤖 Nuevo mensaje de Groq (Reminder)\n\n"
-            f"📝 Texto original:\n{payload.text}\n\n"
-            f"💬 Respuesta:\n{reminder_text}"
-        )
-
-        # Codificamos el texto para URL
-        encoded_msg = quote(msg, safe="")
-        whatsapp_link = f"https://wa.me/{whatsapp_number}?text={encoded_msg}"
-        print(f"🔗 WhatsApp link generado: {whatsapp_link}")
-        # --- FIN NUEVO ---
+        # --- Generar respuesta según el modo solicitado ---
+        if payload.response_mode == "whatsapp_link":
+            whatsapp_number = "573115226848"
+            msg = (
+                "🤖 Nuevo mensaje de Groq (Reminder)\n\n"
+                f"📝 Texto original:\n{payload.text}\n\n"
+                f"💬 Respuesta:\n{reminder_text}"
+            )
+            encoded_msg = quote(msg, safe="")
+            whatsapp_link = f"https://wa.me/{whatsapp_number}?text={encoded_msg}"
+            response_type = "whatsapp_link"
+            print(f"🔗 WhatsApp link generado: {whatsapp_link}")
+        else:
+            # Modo text_only: no generar link
+            whatsapp_link = None
+            response_type = "text_only"
+            print(f"📝 Modo text-only: solo respuesta de Groq")
 
         print("="*50)
         print("✅ PETICIÓN /reminder COMPLETADA")
         print("="*50 + "\n")
 
-        return ReminderOut(reminder_text=reminder_text, whatsapp_link=whatsapp_link)
+        return ReminderOut(
+            reminder_text=reminder_text,
+            whatsapp_link=whatsapp_link,
+            response_type=response_type
+        )
 
     except Exception as e:
         print(f"❌ ERROR EN /reminder: {type(e).__name__} -> {e}")
