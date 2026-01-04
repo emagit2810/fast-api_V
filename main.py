@@ -446,23 +446,20 @@ async def reminder_endpoint(
         reminder_text = completion.choices[0].message.content or "Recordatorio procesado."
         print(f"✅ Reminder generado: {reminder_text[:120]}...")
 
-        # --- Generar respuesta según el modo solicitado ---
-        if payload.response_mode == "whatsapp_link":
-            whatsapp_number = "573115226848"
-            msg = (
-                "🤖 Nuevo mensaje de Groq (Reminder)\n\n"
-                f"📝 Texto original:\n{payload.text}\n\n"
-                f"💬 Respuesta:\n{reminder_text}"
-            )
-            encoded_msg = quote(msg, safe="")
-            whatsapp_link = f"https://wa.me/{whatsapp_number}?text={encoded_msg}"
-            response_type = "whatsapp_link"
-            print(f"🔗 WhatsApp link generado: {whatsapp_link}")
-        else:
-            # Modo text_only: no generar link
-            whatsapp_link = None
-            response_type = "text_only"
-            print(f"📝 Modo text-only: solo respuesta de Groq")
+        # --- NUEVO: construir link de WhatsApp con wa.me ---
+        whatsapp_number = "573115226848"
+
+        msg = (
+            "🤖 Nuevo mensaje de Groq (Reminder)\n\n"
+            f"📝 Texto original:\n{payload.text}\n\n"
+            f"💬 Respuesta:\n{reminder_text}"
+        )
+
+        # Codificamos el texto para URL
+        encoded_msg = quote(msg, safe="")
+        whatsapp_link = f"https://wa.me/{whatsapp_number}?text={encoded_msg}"
+        print(f"🔗 WhatsApp link generado: {whatsapp_link}")
+        # --- FIN NUEVO ---
 
         print("="*50)
         print("✅ PETICIÓN /reminder COMPLETADA")
