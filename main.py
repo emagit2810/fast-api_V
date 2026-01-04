@@ -45,7 +45,10 @@ if not GROQ_API_KEY or not API_BEARER_TOKEN:
 ENVIRONMENT = _getenv_clean("ENVIRONMENT") or "prod"
 
 # URL del webhook de n8n (actualizada con el Path correcto del Trigger)
-N8N_WEBHOOK_URL = "https://n8n-service-ea3k.onrender.com/webhook/9e097731-681a-4ca4-aab9-ebf3700e63d4"
+# URL del webhook de n8n (Actualizada a la versión de TEST bajo pedido del usuario)
+# OJO: Los URLs de 'webhook-test' solo funcionan cuando tienes la UI de n8n abierta esperando el evento.
+# Para producción, deberás cambiar esto a la URL de producción (sin '-test') y activar el workflow.
+N8N_WEBHOOK_URL = "https://n8n-service-ea3k.onrender.com/webhook-test/9e097731-681a-4ca4-aab9-ebf3700e63d4"
 
 print(f"✅ N8N_WEBHOOK_URL configurada: {N8N_WEBHOOK_URL}")
 
@@ -54,6 +57,108 @@ client = AsyncGroq(api_key=GROQ_API_KEY)
 
 # Seguridad Bearer (auto_error=False para manejarlo a mano)
 bearer_scheme = HTTPBearer(auto_error=False)
+
+# ======================
+# Helper: Enviar a n8n
+# ======================
+
+async def send_payload_to_n8n(data: dict, origin: str):
+    """
+    Envía un payload JSON a la URL de n8n configurada y loguea todo el proceso
+    para depuración en Render.
+    """
+    if not N8N_WEBHOOK_URL:
+        print(f"⚠️ [{origin}] N8N_WEBHOOK_URL no configurada. Saltando envío.")
+        return
+
+    print(f"\n{'='*70}")
+    print(f"🚀 [{origin}] INICIANDO ENVÍO A N8N WEBHOOK")
+    print(f"{'='*70}")
+    print(f"🔗 Target URL: {N8N_WEBHOOK_URL}")
+    
+    # IMPORTANTE: Crear una copia para no modificar el dict original
+    payload = data.copy()
+    
+    # Añadimos timestamp si no viene
+    if "timestamp" not in payload:
+        payload["timestamp"] = datetime.utcnow().isoformat()
+    
+    payload["origin_endpoint"] = origin
+    payload["environment"] = ENVIRONMENT
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "FastAPI-GastosTracker/1.0"
+    }
+
+    print(f"\n📋 HEADERS que se enviarán:")
+    for k, v in headers.items():
+        print(f"   {k}: {v}")
+    
+    print(f"\n📦 BODY (JSON) que se enviará:")
+    body_json_str = json.dumps(payload, indent=2, ensure_ascii=False)
+    print(body_json_str)
+    
+    # Generar CURL equivalente para debugging
+    body_escaped = json.dumps(payload, ensure_ascii=False).replace('"', '\\"')
+    curl_command = (
+        f'curl -X POST "{N8N_WEBHOOK_URL}" \\\n'
+        f'  -H "Content-Type: application/json" \\\n'
+        f'  -H "Accept: application/json" \\\n'
+        f'  --data-raw "{body_escaped}"'
+    )
+    print(f"\n🔧 CURL EQUIVALENTE (para testing manual):")
+    print(curl_command)
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
+            print(f"\n⏳ [{origin}] Enviando request POST a n8n...")
+            start_n8n = time.time()
+            
+            response = await client.post(
+                N8N_WEBHOOK_URL, 
+                json=payload, 
+                headers=headers
+            )
+            
+            duration = time.time() - start_n8n
+            
+            print(f"\n📩 [{origin}] RESPUESTA DE N8N RECIBIDA (⏱️ {duration:.3f}s):")
+            print(f"{'─'*70}")
+            print(f"   � Status Code: {response.status_code}")
+            print(f"   � Reason: {response.reason_phrase}")
+            print(f"   📋 Response Headers:")
+            for k, v in response.headers.items():
+                print(f"      {k}: {v}")
+            print(f"   📄 Response Body: {response.text[:500]}")
+            
+            if response.status_code >= 400:
+                print(f"\n⚠️ [{origin}] ¡ALERTA! n8n devolvió código de error {response.status_code}")
+                print(f"   Detalles: {response.text}")
+            elif response.status_code >= 200 and response.status_code < 300:
+                print(f"\n✅ [{origin}] ¡ÉXITO! Webhook procesado correctamente por n8n")
+            else:
+                print(f"\n❓ [{origin}] Respuesta inesperada: {response.status_code}")
+                
+            print(f"{'='*70}\n")
+
+    except httpx.TimeoutException as e:
+        print(f"\n❌ [{origin}] TIMEOUT al contactar n8n (>20s): {e}")
+        print(f"   Verifica que n8n esté ejecutándose y la URL sea correcta.")
+        
+    except httpx.ConnectError as e:
+        print(f"\n❌ [{origin}] ERROR DE CONEXIÓN a n8n: {e}")
+        print(f"   ¿Está n8n online? ¿La URL es correcta?")
+        
+    except Exception as e:
+        print(f"\n❌ [{origin}] ERROR CRÍTICO INESPERADO al contactar n8n:")
+        print(f"   Tipo: {type(e).__name__}")
+        print(f"   Mensaje: {str(e)}")
+        import traceback
+        print(f"   Traceback:\n{traceback.format_exc()}")
+        
+    # No re-lanzamos la excepción para no romper el flujo principal de la API
 
 # ======================
 # App FastAPI
@@ -314,44 +419,19 @@ async def query_endpoint(
         print(f"🔗 WhatsApp link generado: {whatsapp_link}")
         # --- FIN NUEVO ---
         
-        # Llamada a n8n webhook DESPUÉS de Groq (solo si éxito)
-        if N8N_WEBHOOK_URL:
-            try:
-                payload_n8n = {
-                    "pregunta": payload.pregunta,
-                    "respuesta_groq": respuesta,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "environment": ENVIRONMENT
-                }
-                headers_n8n = {"Content-Type": "application/json"}
-                
-                print(f"\n📡 ENVIANDO A N8N WEBHOOK ({ENVIRONMENT})...")
-                print(f"🔗 URL: {N8N_WEBHOOK_URL}")
-                print(f"📋 Headers: {headers_n8n}")
-                print(f"📦 Body: {json.dumps(payload_n8n, ensure_ascii=False)}")
-                
-                # Escapar comillas simples para el CURL de debug
-                body_safe = json.dumps(payload_n8n, ensure_ascii=False).replace("'", "'\\''")
-                
-                n8n_curl = (
-                    f'curl -X POST "{N8N_WEBHOOK_URL}" '
-                    f'-H "Content-Type: application/json" '
-                    f"-d '{body_safe}'"
-                )
-                print(f"🔧 CURL n8n (para copiar/pegar):\n{n8n_curl}")
-
-                async with httpx.AsyncClient(timeout=10.0) as ac:
-                    response_n8n = await ac.post(N8N_WEBHOOK_URL, json=payload_n8n, headers=headers_n8n)
-                    print(f"🔙 Respuesta n8n: {response_n8n.status_code}")
-                    if response_n8n.status_code >= 400:
-                         print(f"❌ Body respuesta n8n: {response_n8n.text}")
-                    response_n8n.raise_for_status()
-                    
-            except Exception as e:
-                print(f"❌ Error llamando n8n: {e}")
-                # Log solo, continúa – n8n es "fire-and-forget" para no impactar UX
-        else:
-            print(f"⚠️  Saltando llamada a n8n (URL no configurada para ENVIRONMENT={ENVIRONMENT})")
+        # Llamada a n8n webhook DESPUÉS de Groq (refactorizado)
+        # Preparamos los datos completos que queremos que n8n reciba
+        payload_n8n = {
+            "evento": "query_received",
+            "pregunta": payload.pregunta,
+            "respuesta_groq": respuesta,
+            "whatsapp_link": whatsapp_link,
+            # Metadata extra
+            "model_name": MODEL_NAME
+        }
+        
+        # Enviamos usando el helper
+        await send_payload_to_n8n(payload_n8n, origin="/query")
         
         print("="*50)
         print("✅ PETICIÓN /query COMPLETADA")
@@ -461,6 +541,22 @@ async def reminder_endpoint(
         whatsapp_link = f"https://wa.me/{whatsapp_number}?text={encoded_msg}"
         print(f"🔗 WhatsApp link generado: {whatsapp_link}")
         # --- FIN NUEVO ---
+
+        print("="*50)
+        # --- NUEVO: Enviar datos a n8n ---
+        payload_n8n = {
+            "evento": "reminder_received",
+            "text": payload.text,
+            "task_id": payload.task_id,
+            "due_date": payload.due_date,
+            "priority": payload.priority,
+            "type": payload.type,
+            "response_mode": payload.response_mode,
+            "respuesta_groq": reminder_text,
+            "whatsapp_link": whatsapp_link
+        }
+        await send_payload_to_n8n(payload_n8n, origin="/reminder")
+        # ---------------------------------
 
         print("="*50)
         print("✅ PETICIÓN /reminder COMPLETADA")
