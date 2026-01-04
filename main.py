@@ -39,18 +39,17 @@ if not GROQ_API_KEY or not API_BEARER_TOKEN:
     raise RuntimeError("Faltan GROQ_API_KEY o API_BEARER_TOKEN en .env")
 
 # ======================
-# Configuración de n8n webhook
+# Configuración de n8n webhooks (PRODUCCIÓN Y TEST)
 # ======================
 
 ENVIRONMENT = _getenv_clean("ENVIRONMENT") or "prod"
 
-# URL del webhook de n8n (actualizada con el Path correcto del Trigger)
-# URL del webhook de n8n (Actualizada a la versión de TEST bajo pedido del usuario)
-# OJO: Los URLs de 'webhook-test' solo funcionan cuando tienes la UI de n8n abierta esperando el evento.
-# Para producción, deberás cambiar esto a la URL de producción (sin '-test') y activar el workflow.
-N8N_WEBHOOK_URL = "https://n8n-service-ea3k.onrender.com/webhook-test/9e097731-681a-4ca4-aab9-ebf3700e63d4"
+# URLs de webhooks de n8n - PRODUCCIÓN y TEST
+N8N_WEBHOOK_URL_PROD = "https://n8n-service-ea3k.onrender.com/webhook/9e097731-681a-4ca4-aab9-ebf3700e63d4"
+N8N_WEBHOOK_URL_TEST = "https://n8n-service-ea3k.onrender.com/webhook-test/9e097731-681a-4ca4-aab9-ebf3700e63d4"
 
-print(f"✅ N8N_WEBHOOK_URL configurada: {N8N_WEBHOOK_URL}")
+print(f"✅ N8N_WEBHOOK_URL_PROD configurada: {N8N_WEBHOOK_URL_PROD}")
+print(f"✅ N8N_WEBHOOK_URL_TEST configurada: {N8N_WEBHOOK_URL_TEST}")
 
 # Cliente Groq (usa el endpoint OpenAI-compatible por defecto)
 client = AsyncGroq(api_key=GROQ_API_KEY)
@@ -59,22 +58,28 @@ client = AsyncGroq(api_key=GROQ_API_KEY)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 # ======================
-# Helper: Enviar a n8n
+# Helper: Enviar a n8n (una URL)
 # ======================
 
-async def send_payload_to_n8n(data: dict, origin: str):
+async def send_to_single_n8n_webhook(url: str, data: dict, origin: str, webhook_type: str):
     """
-    Envía un payload JSON a la URL de n8n configurada y loguea todo el proceso
+    Envía un payload JSON a una URL específica de n8n y loguea todo el proceso
     para depuración en Render.
+    
+    Args:
+        url: URL del webhook de n8n
+        data: Diccionario con los datos a enviar
+        origin: Nombre del endpoint que origina la llamada (ej: "/query")
+        webhook_type: Tipo de webhook ("PROD" o "TEST")
     """
-    if not N8N_WEBHOOK_URL:
-        print(f"⚠️ [{origin}] N8N_WEBHOOK_URL no configurada. Saltando envío.")
+    if not url:
+        print(f"⚠️ [{origin}] URL de n8n {webhook_type} no configurada. Saltando envío.")
         return
 
     print(f"\n{'='*70}")
-    print(f"🚀 [{origin}] INICIANDO ENVÍO A N8N WEBHOOK")
+    print(f"🚀 [{origin}] INICIANDO ENVÍO A N8N WEBHOOK {webhook_type}")
     print(f"{'='*70}")
-    print(f"🔗 Target URL: {N8N_WEBHOOK_URL}")
+    print(f"🔗 Target URL: {url}")
     
     # IMPORTANTE: Crear una copia para no modificar el dict original
     payload = data.copy()
@@ -85,6 +90,7 @@ async def send_payload_to_n8n(data: dict, origin: str):
     
     payload["origin_endpoint"] = origin
     payload["environment"] = ENVIRONMENT
+    payload["webhook_type"] = webhook_type  # Agregar tipo de webhook
 
     headers = {
         "Content-Type": "application/json",
@@ -103,7 +109,7 @@ async def send_payload_to_n8n(data: dict, origin: str):
     # Generar CURL equivalente para debugging
     body_escaped = json.dumps(payload, ensure_ascii=False).replace('"', '\\"')
     curl_command = (
-        f'curl -X POST "{N8N_WEBHOOK_URL}" \\\n'
+        f'curl -X POST "{url}" \\\n'
         f'  -H "Content-Type: application/json" \\\n'
         f'  -H "Accept: application/json" \\\n'
         f'  --data-raw "{body_escaped}"'
@@ -113,52 +119,79 @@ async def send_payload_to_n8n(data: dict, origin: str):
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
-            print(f"\n⏳ [{origin}] Enviando request POST a n8n...")
+            print(f"\n⏳ [{origin}] Enviando request POST a n8n {webhook_type}...")
             start_n8n = time.time()
             
             response = await client.post(
-                N8N_WEBHOOK_URL, 
+                url, 
                 json=payload, 
                 headers=headers
             )
             
             duration = time.time() - start_n8n
             
-            print(f"\n📩 [{origin}] RESPUESTA DE N8N RECIBIDA (⏱️ {duration:.3f}s):")
+            print(f"\n📩 [{origin}] RESPUESTA DE N8N {webhook_type} RECIBIDA (⏱️ {duration:.3f}s):")
             print(f"{'─'*70}")
-            print(f"   � Status Code: {response.status_code}")
-            print(f"   � Reason: {response.reason_phrase}")
+            print(f"   ✓ Status Code: {response.status_code}")
+            print(f"   ✓ Reason: {response.reason_phrase}")
             print(f"   📋 Response Headers:")
             for k, v in response.headers.items():
                 print(f"      {k}: {v}")
             print(f"   📄 Response Body: {response.text[:500]}")
             
             if response.status_code >= 400:
-                print(f"\n⚠️ [{origin}] ¡ALERTA! n8n devolvió código de error {response.status_code}")
+                print(f"\n⚠️ [{origin}] ¡ALERTA! n8n {webhook_type} devolvió código de error {response.status_code}")
                 print(f"   Detalles: {response.text}")
             elif response.status_code >= 200 and response.status_code < 300:
-                print(f"\n✅ [{origin}] ¡ÉXITO! Webhook procesado correctamente por n8n")
+                print(f"\n✅ [{origin}] ¡ÉXITO! Webhook {webhook_type} procesado correctamente por n8n")
             else:
-                print(f"\n❓ [{origin}] Respuesta inesperada: {response.status_code}")
+                print(f"\n❓ [{origin}] Respuesta inesperada de {webhook_type}: {response.status_code}")
                 
             print(f"{'='*70}\n")
 
     except httpx.TimeoutException as e:
-        print(f"\n❌ [{origin}] TIMEOUT al contactar n8n (>20s): {e}")
+        print(f"\n❌ [{origin}] TIMEOUT al contactar n8n {webhook_type} (>20s): {e}")
         print(f"   Verifica que n8n esté ejecutándose y la URL sea correcta.")
         
     except httpx.ConnectError as e:
-        print(f"\n❌ [{origin}] ERROR DE CONEXIÓN a n8n: {e}")
+        print(f"\n❌ [{origin}] ERROR DE CONEXIÓN a n8n {webhook_type}: {e}")
         print(f"   ¿Está n8n online? ¿La URL es correcta?")
         
     except Exception as e:
-        print(f"\n❌ [{origin}] ERROR CRÍTICO INESPERADO al contactar n8n:")
+        print(f"\n❌ [{origin}] ERROR CRÍTICO INESPERADO al contactar n8n {webhook_type}:")
         print(f"   Tipo: {type(e).__name__}")
         print(f"   Mensaje: {str(e)}")
         import traceback
         print(f"   Traceback:\n{traceback.format_exc()}")
         
     # No re-lanzamos la excepción para no romper el flujo principal de la API
+
+
+async def send_payload_to_n8n(data: dict, origin: str):
+    """
+    Envía un payload JSON a AMBAS URLs de n8n (PROD y TEST) en paralelo.
+    
+    Args:
+        data: Diccionario con los datos a enviar
+        origin: Nombre del endpoint que origina la llamada (ej: "/query")
+    """
+    import asyncio
+    
+    print(f"\n{'🎯'*35}")
+    print(f"📡 [{origin}] ENVIANDO A N8N - PRODUCCIÓN Y TEST")
+    print(f"{'🎯'*35}")
+    
+    # Enviar a ambos webhooks en paralelo
+    await asyncio.gather(
+        send_to_single_n8n_webhook(N8N_WEBHOOK_URL_PROD, data, origin, "PROD"),
+        send_to_single_n8n_webhook(N8N_WEBHOOK_URL_TEST, data, origin, "TEST"),
+        return_exceptions=True  # No falla si uno de los webhooks falla
+    )
+    
+    print(f"\n{'✨'*35}")
+    print(f"✅ [{origin}] ENVÍO A N8N COMPLETADO (PROD + TEST)")
+    print(f"{'✨'*35}\n")
+
 
 # ======================
 # App FastAPI
@@ -586,8 +619,16 @@ async def root():
         "version": "1.0.0",
         "model": MODEL_NAME,
         "environment": ENVIRONMENT,
-        "n8n_webhook_configured": N8N_WEBHOOK_URL is not None,
-        "n8n_webhook_url": N8N_WEBHOOK_URL if N8N_WEBHOOK_URL else "Not configured"
+        "n8n_webhooks": {
+            "production": {
+                "configured": N8N_WEBHOOK_URL_PROD is not None,
+                "url": N8N_WEBHOOK_URL_PROD if N8N_WEBHOOK_URL_PROD else "Not configured"
+            },
+            "test": {
+                "configured": N8N_WEBHOOK_URL_TEST is not None,
+                "url": N8N_WEBHOOK_URL_TEST if N8N_WEBHOOK_URL_TEST else "Not configured"
+            }
+        }
     }
 
 if __name__ == "__main__":
