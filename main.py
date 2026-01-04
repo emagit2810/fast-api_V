@@ -39,23 +39,15 @@ if not GROQ_API_KEY or not API_BEARER_TOKEN:
     raise RuntimeError("Faltan GROQ_API_KEY o API_BEARER_TOKEN en .env")
 
 # ======================
-# Configuración de n8n webhook (test vs prod)
+# Configuración de n8n webhook
 # ======================
 
 ENVIRONMENT = _getenv_clean("ENVIRONMENT") or "prod"
-N8N_WEBHOOK_TEST = _getenv_clean("N8N_WEBHOOK_TEST")
-N8N_WEBHOOK_PROD = _getenv_clean("N8N_WEBHOOK_PROD")
 
-# Seleccionar URL según el entorno
-if ENVIRONMENT == "test":
-    N8N_WEBHOOK_URL = N8N_WEBHOOK_TEST
-else:
-    N8N_WEBHOOK_URL = N8N_WEBHOOK_PROD
+# URL del webhook de n8n (actualizada con el Path correcto del Trigger)
+N8N_WEBHOOK_URL = "https://n8n-service-ea3k.onrender.com/webhook/9e097731-681a-4ca4-aab9-ebf3700e63d4"
 
-# Validar que la URL de n8n esté configurada
-if not N8N_WEBHOOK_URL:
-    print(f"⚠️  ADVERTENCIA: N8N_WEBHOOK_URL no configurada para ENVIRONMENT={ENVIRONMENT}")
-    print(f"   Asegúrate de definir N8N_WEBHOOK_TEST o N8N_WEBHOOK_PROD en .env o Render")
+print(f"✅ N8N_WEBHOOK_URL configurada: {N8N_WEBHOOK_URL}")
 
 # Cliente Groq (usa el endpoint OpenAI-compatible por defecto)
 client = AsyncGroq(api_key=GROQ_API_KEY)
