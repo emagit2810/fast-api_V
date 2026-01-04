@@ -466,6 +466,9 @@ async def reminder_endpoint(
         print("✅ PETICIÓN /reminder COMPLETADA")
         print("="*50 + "\n")
 
+        response_type = payload.response_mode
+        print(f"📊 Response type establecido: {response_type}")
+
         return ReminderOut(
             reminder_text=reminder_text,
             whatsapp_link=whatsapp_link,
