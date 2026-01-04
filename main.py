@@ -82,6 +82,7 @@ async def log_requests(request: Request, call_next):
     if request.method in ["POST", "PUT", "PATCH"]:
         try:
             body = await request.body()
+            
             if body:
                 body_str = body.decode()
                 body_json = json.loads(body_str)
